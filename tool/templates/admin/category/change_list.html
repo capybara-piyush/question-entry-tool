@@ -1,0 +1,54 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrahead %}
+<script src="https://cdn.tailwindcss.com"></script>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-lg shadow-md max-w-2xl mx-auto my-8">
+    <h2 class="text-2xl font-bold mb-6 text-gray-800">Import Questions</h2>
+
+    <!-- Excel File Upload -->
+    <div class="mb-8">
+        <h3 class="text-lg font-semibold mb-4 text-gray-700">Option 1: Upload Excel File</h3>
+        <form action="upload-excel/" method="post" enctype="multipart/form-data" class="space-y-4">
+            {% csrf_token %}
+            <div class="flex flex-col space-y-2">
+                <label for="excel_file" class="text-sm font-medium text-gray-700">Select Excel File</label>
+                <input type="file" name="excel_file" accept=".xlsx,.xls" required
+                    class="border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="mt-4">
+                <button type="submit"
+                    class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Upload and Process Excel
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Google Sheets URL -->
+    <div>
+        <h3 class="text-lg font-semibold mb-4 text-gray-700">Option 2: Import from Google Sheets</h3>
+        <form action="import-sheets/" method="post" class="space-y-4">
+            {% csrf_token %}
+            <div class="flex flex-col space-y-2">
+                <label for="sheet_url" class="text-sm font-medium text-gray-700">Google Sheets URL</label>
+                <input type="url" name="sheet_url" required
+                    class="border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="https://docs.google.com/spreadsheets/d/...">
+                <p class="text-sm text-gray-500">Make sure the sheet is shared with view access</p>
+            </div>
+            <div class="mt-4">
+                <button type="submit"
+                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    Import from Google Sheets
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{{ block.super }}
+{% endblock %}
