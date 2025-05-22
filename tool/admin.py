@@ -104,6 +104,9 @@ class CategoryAdmin(admin.ModelAdmin):
                             question_text=row[0],
                             is_product_question=is_product,
                             product_type=product_type,
+                            hint=row.get("Hint", "")
+                            if pd.notna(row.get("Hint", ""))
+                            else None,
                         )
                         logger.info(
                             f"Sheet: {sheet_name}, Row: {row_num} - Created question: {question.question_id}"
