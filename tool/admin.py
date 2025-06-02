@@ -52,10 +52,40 @@ class CategoryAdmin(admin.ModelAdmin):
         try:
             category_id_mapping = Category.get_category_id_mapping()
 
-            Category.objects.all().delete()
-
             for name, category_id in category_id_mapping.items():
-                Category.objects.create(category_id=category_id, name=name)
+                Category.objects.get_or_create(category_id=category_id, name=name)
+
+            excel_questions = set()
+            for sheet_name, df in data_dict.items():
+                for index, row in df.iterrows():
+                    if not (pd.isna(row[0]) or str(row[0]).strip() == ""):
+                        question_text = str(row[0]).strip()
+                        excel_questions.add(question_text)
+
+            existing_questions = {}
+            for category in Category.objects.all():
+                questions = Question.objects.filter(category=category).prefetch_related(
+                    "option_set"
+                )
+                for question in questions:
+                    key = question.question_text.strip()
+                    options = list(question.option_set.all())
+                    options_data = {
+                        "correct": next(
+                            (opt.option_text for opt in options if opt.is_correct), None
+                        ),
+                        "incorrect": [
+                            opt.option_text for opt in options if not opt.is_correct
+                        ],
+                    }
+                    existing_questions[key] = {
+                        "question": question,
+                        "options": options_data,
+                        "found_in_excel": key in excel_questions,
+                    }
+
+            questions_to_create = []
+            questions_to_update = []
 
             for sheet_name, df in data_dict.items():
                 logger.info(f"Processing sheet: {sheet_name}")
@@ -80,8 +110,6 @@ class CategoryAdmin(admin.ModelAdmin):
                 for index, row in df.iterrows():
                     row_num = index + 2
                     try:
-                        logger.info(f"Processing row {row_num} in sheet {sheet_name}")
-
                         if pd.isna(row[0]) or str(row[0]).strip() == "":
                             logger.error(
                                 f"Sheet: {sheet_name}, Row: {row_num} - Question text is empty"
@@ -93,6 +121,9 @@ class CategoryAdmin(admin.ModelAdmin):
                                 f"Sheet: {sheet_name}, Row: {row_num} - Correct answer is empty"
                             )
                             continue
+
+                        question_text = str(row[0]).strip()
+                        key = question_text
 
                         product_value = (
                             row.get("Product", "").strip().upper()
@@ -122,39 +153,120 @@ class CategoryAdmin(admin.ModelAdmin):
                                     level="WARNING",
                                 )
 
-                        question = Question.objects.create(
-                            category=category,
-                            question_text=row[0],
-                            is_product_question=is_product,
-                            product_type=product_type,
-                            time_limit=60 if is_product else 15,
-                            hint="Hint Text" if is_product else None,
-                        )
-                        logger.info(
-                            f"Sheet: {sheet_name}, Row: {row_num} - Created question: {question.question_id}"
-                        )
+                        new_options = {
+                            "correct": str(row[1]).strip(),
+                            "incorrect": [
+                                str(row[i]).strip()
+                                for i in range(2, 5)
+                                if pd.notna(row[i]) and str(row[i]).strip()
+                            ],
+                        }
 
-                        Option.objects.create(
-                            question=question, option_text=row[1], is_correct=True
-                        )
+                        if key in existing_questions:
+                            existing_data = existing_questions[key]
+                            existing_question = existing_data["question"]
+                            existing_options = existing_data["options"]
 
-                        for i in range(2, 5):
-                            if pd.notna(row[i]) and str(row[i]).strip():
-                                Option.objects.create(
-                                    question=question,
-                                    option_text=row[i],
-                                    is_correct=False,
+                            # Only update if it's in a different category or has changes
+                            if (
+                                existing_question.category_id != category_id
+                                or existing_question.is_product_question != is_product
+                                or existing_question.product_type != product_type
+                                or existing_options["correct"] != new_options["correct"]
+                                or set(existing_options["incorrect"])
+                                != set(new_options["incorrect"])
+                            ):
+                                questions_to_update.append(
+                                    {
+                                        "question": existing_question,
+                                        "category": category,
+                                        "is_product_question": is_product,
+                                        "product_type": product_type,
+                                        "options": new_options,
+                                        "time_limit": 60 if is_product else 15,
+                                        "hint": "Hint Text" if is_product else None,
+                                    }
                                 )
-                            else:
-                                logger.warning(
-                                    f"Sheet: {sheet_name}, Row: {row_num} - Missing option for column {i + 1}"
+                                logger.info(
+                                    f"Sheet: {sheet_name}, Row: {row_num} - Question will be updated: {existing_question.question_id}"
                                 )
+                        else:
+                            questions_to_create.append(
+                                {
+                                    "category": category,
+                                    "question_text": question_text,
+                                    "is_product_question": is_product,
+                                    "product_type": product_type,
+                                    "time_limit": 60 if is_product else 15,
+                                    "hint": "Hint Text" if is_product else None,
+                                    "options": new_options,
+                                }
+                            )
+                            logger.info(
+                                f"Sheet: {sheet_name}, Row: {row_num} - New question will be created"
+                            )
 
                     except Exception as row_error:
                         error_msg = f"Error processing row {row_num} in sheet '{sheet_name}': {str(row_error)}"
                         logger.error(error_msg)
                         self.message_user(request, error_msg, level="ERROR")
                         continue
+
+            from django.db import transaction
+
+            with transaction.atomic():
+                # Only delete questions that don't exist in any sheet
+                questions_to_delete = [
+                    data["question"]
+                    for data in existing_questions.values()
+                    if not data["found_in_excel"]
+                ]
+
+                for question_data in questions_to_create:
+                    options = question_data.pop("options")
+                    question = Question.objects.create(**question_data)
+                    Option.objects.create(
+                        question=question,
+                        option_text=options["correct"],
+                        is_correct=True,
+                    )
+                    for incorrect_option in options["incorrect"]:
+                        Option.objects.create(
+                            question=question,
+                            option_text=incorrect_option,
+                            is_correct=False,
+                        )
+                    logger.info(f"Created new question: {question.question_id}")
+
+                for update_data in questions_to_update:
+                    question = update_data["question"]
+                    options = update_data.pop("options")
+                    for field, value in update_data.items():
+                        setattr(question, field, value)
+                    question.save()
+
+                    question.option_set.all().delete()
+                    Option.objects.create(
+                        question=question,
+                        option_text=options["correct"],
+                        is_correct=True,
+                    )
+                    for incorrect_option in options["incorrect"]:
+                        Option.objects.create(
+                            question=question,
+                            option_text=incorrect_option,
+                            is_correct=False,
+                        )
+                    logger.info(f"Updated question: {question.question_id}")
+
+                for question in questions_to_delete:
+                    question_id = question.question_id
+                    question.delete()
+                    logger.info(f"Deleted question: {question_id}")
+
+                logger.info(
+                    f"Summary: Created {len(questions_to_create)} questions, Updated {len(questions_to_update)} questions, Deleted {len(questions_to_delete)} questions"
+                )
 
             success_msg = f"Data processed successfully. Check the log file for details: {log_file}"
             logger.info("Data import completed successfully")
