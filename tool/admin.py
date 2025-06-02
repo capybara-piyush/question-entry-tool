@@ -50,9 +50,32 @@ class CategoryAdmin(admin.ModelAdmin):
         logger.info("Starting data import process")
 
         try:
+            category_id_mapping = Category.get_category_id_mapping()
+
+            Category.objects.all().delete()
+
+            for name, category_id in category_id_mapping.items():
+                Category.objects.create(category_id=category_id, name=name)
+
             for sheet_name, df in data_dict.items():
                 logger.info(f"Processing sheet: {sheet_name}")
-                category, _ = Category.objects.get_or_create(name=sheet_name)
+
+                category_id = next(
+                    (
+                        id
+                        for name, id in category_id_mapping.items()
+                        if name.lower() == sheet_name.lower()
+                    ),
+                    None,
+                )
+
+                if category_id is None:
+                    logger.error(
+                        f"Invalid sheet name: {sheet_name}. Must be one of {list(category_id_mapping.keys())}"
+                    )
+                    continue
+
+                category = Category.objects.get(category_id=category_id)
 
                 for index, row in df.iterrows():
                     row_num = index + 2

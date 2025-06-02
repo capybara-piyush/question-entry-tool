@@ -11,7 +11,7 @@ class ProductTypeEnum(models.TextChoices):
 
 
 class Category(models.Model):
-    category_id = models.AutoField(primary_key=True)
+    category_id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=50)
     description = models.TextField(null=True, blank=True)
 
@@ -20,6 +20,16 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
+
+    @classmethod
+    def get_category_id_mapping(cls):
+        return {
+            "Tech & Gadgets": 52,
+            "Gaming": 53,
+            "Pop Culture & Entertainment": 54,
+            "Sports": 55,
+            "Travel": 56,
+        }
 
 
 class ProductType(models.Model):
