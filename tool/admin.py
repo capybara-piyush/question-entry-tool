@@ -104,8 +104,9 @@ class CategoryAdmin(admin.ModelAdmin):
                             question_text=row[0],
                             is_product_question=is_product,
                             product_type=product_type,
-                            hint=row.get("Hint", "")
-                            if pd.notna(row.get("Hint", ""))
+                            time_limit=60 if is_product else 15,
+                            hint=row.get("Hint", None)
+                            if pd.notna(row.get("Hint", None))
                             else None,
                         )
                         logger.info(

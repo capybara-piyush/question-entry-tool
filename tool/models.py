@@ -41,7 +41,7 @@ class Question(models.Model):
         Category, db_column="category_id", on_delete=models.CASCADE
     )
     question_text = models.TextField()
-    time_limit = models.IntegerField(default=13)
+    time_limit = models.IntegerField(default=15)
     is_product_question = models.BooleanField(default=False)
     product_type = models.ForeignKey(
         ProductType,
