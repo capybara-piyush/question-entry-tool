@@ -105,9 +105,7 @@ class CategoryAdmin(admin.ModelAdmin):
                             is_product_question=is_product,
                             product_type=product_type,
                             time_limit=60 if is_product else 15,
-                            hint=row.get("Hint", None)
-                            if pd.notna(row.get("Hint", None))
-                            else None,
+                            hint="Hint Text" if is_product else None,
                         )
                         logger.info(
                             f"Sheet: {sheet_name}, Row: {row_num} - Created question: {question.question_id}"
